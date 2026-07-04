@@ -3722,19 +3722,47 @@ class GeminiAnalyzer:
             ]
         )
         quote_rows_text = "\n".join(quote_rows)
+
+        market = detect_market(code)
+        if market == "us":
+            price_unit = "美元"
+        elif market == "hk":
+            price_unit = "港元"
+        else:
+            price_unit = "元"
         
-        # ========== 构建决策仪表盘格式的输入 ==========
+                # ========== 构建决策仪表盘格式的输入 ==========
+        data_quality_rules = """
+            ## 数据质量硬规则
+            
+            1. 如果行情来源包含“降级兜底”、quote=fallback、technical=partial、成交额=N/A、换手率=N/A、换手率=None、成交额=None、数据缺失，则该标的数据质量判定为 C 级。
+            2. C 级数据禁止输出“买入、加仓、减仓、清仓、卖出、立即行动”等强操作建议。
+            3. C 级数据只能输出“观望”或“数据不足”，并必须在 guardrail_reason、analysis_summary、dashboard.phase_decision.data_limitations 中说明：行情数据降级，技术信号仅供观察。
+            4. 如果数据质量为 C 级：
+               - operation_advice 必须为“观望”
+               - decision_type 必须为“hold”
+               - action 必须为“watch”
+               - confidence_level 必须为“低”
+               - sentiment_score 必须控制在 45 到 60 之间
+            5. 美股价格单位必须使用“美元”，A股使用“元”，港股使用“港元”。不得把美股价格、均线、止损位、目标位写成“元”。
+            6. 所有价格、涨跌幅、成交量、成交额、均线、换手率、量比必须来自输入数据，禁止自行补全。
+            7. 如果输入数据中没有某项指标，必须写“数据缺失”或 “N/A”，不得根据常识推断。
+            8. 非交易日或 force_run 场景，只能基于上一完整交易日和已知事件分析，不得伪造当天盘中走势。
+            """
+
         prompt = f"""# 决策仪表盘分析请求
 
-## 📊 股票基础信息
-| 项目 | 数据 |
-|------|------|
-| 股票代码 | **{code}** |
-| 股票名称 | **{stock_name}** |
-| 分析日期 | {context.get('date', unknown_text)} |
-
----
-"""
+        {data_quality_rules}
+        
+            ## 📊 股票基础信息
+            | 项目 | 数据 |
+            |------|------|
+            | 股票代码 | **{code}** |
+            | 股票名称 | **{stock_name}** |
+            | 分析日期 | {context.get('date', unknown_text)} |
+            
+            ---
+            """
         prompt += format_market_phase_prompt_section(
             context.get("market_phase_context"),
             report_language=report_language,
@@ -3772,7 +3800,9 @@ class GeminiAnalyzer:
 ### 实时行情增强数据
 | 指标 | 数值 | 解读 |
 |------|------|------|
-| 当前价格 | {rt.get('price', 'N/A')} 元 | |
+| 当前价格 | {rt.get('price', 'N/A')} {price_unit} | |
+| 行情来源 | {rt.get('source', 'N/A')} | source |
+| fallback_from | {rt.get('fallback_from', 'N/A')} | 如果非空，说明行情发生过降级兜底 |
 | **量比** | **{rt.get('volume_ratio', 'N/A')}** | {rt.get('volume_ratio_desc', '')} |
 | **换手率** | **{rt.get('turnover_rate', 'N/A')}%** | |
 | 市盈率(动态) | {rt.get('pe_ratio', 'N/A')} | |
