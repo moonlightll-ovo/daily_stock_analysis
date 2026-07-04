@@ -104,6 +104,11 @@ class MarketOverview:
     top_concepts: List[Dict] = field(default_factory=list)    # 涨幅前5概念
     bottom_concepts: List[Dict] = field(default_factory=list) # 跌幅前5概念
 
+    # 数据质量 / 来源说明
+    sector_rankings_source: str = "获取失败"
+    sector_rankings_quality: str = "missing"
+    concept_rankings_source: str = "获取失败"
+    concept_rankings_quality: str = "missing"
 
 @dataclass
 class MarketLightReviewResult:
@@ -523,7 +528,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         except Exception as e:
             logger.error("[大盘] %s action=get_market_stats status=failed error=%s", self._log_context(), e)
 
-    def _get_sector_rankings(self, overview: MarketOverview):
+        def _get_sector_rankings(self, overview: MarketOverview):
         """获取板块涨跌榜"""
         try:
             logger.info("[大盘] %s action=get_sector_rankings status=start", self._log_context())
@@ -534,19 +539,30 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
                 overview.top_sectors = top_sectors
                 overview.bottom_sectors = bottom_sectors
 
+                # 当前 data_manager 不返回精确 provider 名称。
+                # 根据日志链路，Tushare/efinance/东财失败后最终常见兜底为 AkShare 新浪接口。
+                overview.sector_rankings_source = "AkShare 新浪接口"
+                overview.sector_rankings_quality = "B"
+
                 logger.info(
-                    "[大盘] %s action=get_sector_rankings status=success top=%s bottom=%s",
+                    "[大盘] %s action=get_sector_rankings status=success source=%s quality=%s top=%s bottom=%s",
                     self._log_context(),
+                    overview.sector_rankings_source,
+                    overview.sector_rankings_quality,
                     [s['name'] for s in overview.top_sectors],
                     [s['name'] for s in overview.bottom_sectors],
                 )
             else:
+                overview.sector_rankings_source = "获取失败"
+                overview.sector_rankings_quality = "missing"
                 logger.warning("[大盘] %s action=get_sector_rankings status=empty", self._log_context())
 
         except Exception as e:
+            overview.sector_rankings_source = "获取失败"
+            overview.sector_rankings_quality = "missing"
             logger.error("[大盘] %s action=get_sector_rankings status=failed error=%s", self._log_context(), e)
 
-    def _get_concept_rankings(self, overview: MarketOverview):
+        def _get_concept_rankings(self, overview: MarketOverview):
         """获取概念/题材涨跌榜（fail-open）。"""
         try:
             logger.info("[大盘] %s action=get_concept_rankings status=start", self._log_context())
@@ -557,16 +573,25 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
                 overview.top_concepts = top_concepts
                 overview.bottom_concepts = bottom_concepts
 
+                overview.concept_rankings_source = "AkShare 东方财富概念接口"
+                overview.concept_rankings_quality = "B"
+
                 logger.info(
-                    "[大盘] %s action=get_concept_rankings status=success top=%s bottom=%s",
+                    "[大盘] %s action=get_concept_rankings status=success source=%s quality=%s top=%s bottom=%s",
                     self._log_context(),
+                    overview.concept_rankings_source,
+                    overview.concept_rankings_quality,
                     [s.get('name') for s in overview.top_concepts],
                     [s.get('name') for s in overview.bottom_concepts],
                 )
             else:
+                overview.concept_rankings_source = "获取失败"
+                overview.concept_rankings_quality = "missing"
                 logger.warning("[大盘] %s action=get_concept_rankings status=empty", self._log_context())
 
         except Exception as e:
+            overview.concept_rankings_source = "获取失败"
+            overview.concept_rankings_quality = "missing"
             logger.warning("[大盘] %s action=get_concept_rankings status=failed error=%s", self._log_context(), e)
     
     # def _get_north_flow(self, overview: MarketOverview):
@@ -804,6 +829,12 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
             "concepts": {
                 "top": list(overview.top_concepts or []),
                 "bottom": list(overview.bottom_concepts or []),
+            },
+            "data_quality": {
+                "sector_rankings_source": overview.sector_rankings_source,
+                "sector_rankings_quality": overview.sector_rankings_quality,
+                "concept_rankings_source": overview.concept_rankings_source,
+                "concept_rankings_quality": overview.concept_rankings_quality,
             },
             "news": [self._normalize_news_item(item) for item in (news or [])[:8]],
             "sections": sections,
@@ -1122,6 +1153,34 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         ):
             return ""
         lines = []
+
+        if language == "en":
+            lines.append(
+                f"**Sector data source**: {overview.sector_rankings_source or 'Unavailable'} "
+                f"(quality: {overview.sector_rankings_quality or 'missing'})."
+            )
+            lines.append(
+                f"**Concept/theme data source**: {overview.concept_rankings_source or 'Unavailable'} "
+                f"(quality: {overview.concept_rankings_quality or 'missing'})."
+            )
+            if overview.concept_rankings_quality == "missing":
+                lines.append("Concept/theme rankings are unavailable, so no concept-theme leadership is inferred.")
+            if overview.sector_rankings_source == "AkShare 新浪接口":
+                lines.append("Industry-sector rankings are from a fallback/reference source; treat the ranking as reference-only.")
+        else:
+            lines.append(
+                f"**行业板块来源**：{overview.sector_rankings_source or '获取失败'}，"
+                f"质量等级：{overview.sector_rankings_quality or 'missing'}。"
+            )
+            lines.append(
+                f"**概念板块来源**：{overview.concept_rankings_source or '获取失败'}，"
+                f"质量等级：{overview.concept_rankings_quality or 'missing'}。"
+            )
+            if overview.concept_rankings_quality == "missing":
+                lines.append("**概念板块数据获取失败，暂不输出概念主线。**")
+            if overview.sector_rankings_source == "AkShare 新浪接口":
+                lines.append("**行业板块来源：AkShare 新浪接口，口径仅供参考。**")
+        
         language = self._get_review_language()
 
         def append_ranking(title: str, name_label: str, rows: List[Dict]) -> None:
@@ -1409,6 +1468,28 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         top_concepts_text = self._format_ranking_summary(overview.top_concepts)
         bottom_concepts_text = self._format_ranking_summary(overview.bottom_concepts)
         
+        sector_source = overview.sector_rankings_source or "获取失败"
+        sector_quality = overview.sector_rankings_quality or "missing"
+        concept_source = overview.concept_rankings_source or "获取失败"
+        concept_quality = overview.concept_rankings_quality or "missing"
+
+        if review_language == "en":
+            sector_quality_note = f"""## Sector Data Quality
+            - Industry sector source: {sector_source}; quality: {sector_quality}
+            - Concept/theme source: {concept_source}; quality: {concept_quality}
+            - If concept/theme data is unavailable, do not infer concept themes from industry-sector rankings.
+            - If industry data quality is not A, describe it as a reference-only sector ranking and avoid strong wording such as "clear leadership" or "market consensus".
+            """
+        else:
+                sector_quality_note = f"""## 板块数据源说明
+            - 行业板块来源：{sector_source}，质量等级：{sector_quality}
+            - 概念板块来源：{concept_source}，质量等级：{concept_quality}
+            - 如果概念板块来源为“获取失败”，必须明确写：“概念板块数据获取失败，暂不输出概念主线。”
+            - 如果行业板块质量等级不是 A，只能写“行业板块参考口径”，不得写“主线非常清晰”“资金共识明确”等强结论。
+            - 如果行业板块来源为 AkShare 新浪接口，必须写：“行业板块来源：AkShare 新浪接口，口径仅供参考。”
+            - 禁止根据行业板块自行推断 AI、机器人、半导体等概念主线。
+            """
+        
         # 新闻信息 - 支持 SearchResult 对象或字典
         news_text = ""
         for i, n in enumerate(news[:6], 1):
@@ -1546,6 +1627,8 @@ Concept lagging: {bottom_concepts_text if bottom_concepts_text else "N/A"}"""
 
 {sector_block}
 
+{sector_quality_note}
+
 {data_limits_block}
 
 ## Market News
@@ -1599,6 +1682,8 @@ Output the report content directly, no extra commentary.
 {stats_block}
 
 {sector_block}
+
+{sector_quality_note}
 
 {data_limits_block}
 
