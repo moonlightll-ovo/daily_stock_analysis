@@ -1467,6 +1467,24 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         bottom_sectors_text = self._format_ranking_summary(overview.bottom_sectors)
         top_concepts_text = self._format_ranking_summary(overview.top_concepts)
         bottom_concepts_text = self._format_ranking_summary(overview.bottom_concepts)
+
+         if review_language == "en":
+            market_review_data_rules = """## Market Review Data Rules
+            - Industry sectors and concept themes must be separated.
+            - If concept/theme data is empty or unavailable, explicitly write: "Concept/theme ranking data is unavailable, so no concept-theme leadership is inferred."
+            - Sector data sources must be disclosed.
+            - If sector data comes from a fallback/reference source, reduce conclusion strength and describe it as reference-only. Do not use strong wording such as "clear leadership" or "market consensus".
+            - On non-trading-day forced runs, write the report as "as of the previous trading day's close" rather than treating the run date as live market data.
+            """
+        else:
+            market_review_data_rules = """## 大盘复盘数据硬规则
+            1. 行业板块和概念板块必须分开。
+            2. 如果概念板块数据为空，必须写“概念板块数据获取失败，暂不输出概念主线”，禁止自行推断概念主线。
+            3. 板块数据必须显示来源，例如：“行业板块来源：AkShare 新浪接口，口径仅供参考。”
+            4. 如果板块数据来自兜底接口，必须降低结论强度，只能写“参考口径”，不能写“主线非常清晰”“资金共识明确”。
+            5. 报告日期必须写“截至上一交易日收盘”或“基于上一交易日收盘数据”，非交易日 force_run 时不能写成当天实时行情。
+            6. 所有指数、涨跌幅、成交额、上涨家数、涨停家数、板块涨跌幅必须来自输入数据，禁止自行补全。
+            """
         
         sector_source = overview.sector_rankings_source or "获取失败"
         sector_quality = overview.sector_rankings_quality or "missing"
@@ -1629,6 +1647,8 @@ Concept lagging: {bottom_concepts_text if bottom_concepts_text else "N/A"}"""
 
 {sector_quality_note}
 
+{market_review_data_rules}
+
 {data_limits_block}
 
 ## Market News
@@ -1684,6 +1704,8 @@ Output the report content directly, no extra commentary.
 {sector_block}
 
 {sector_quality_note}
+
+{market_review_data_rules}
 
 {data_limits_block}
 
