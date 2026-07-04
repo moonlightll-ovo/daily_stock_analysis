@@ -528,7 +528,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         except Exception as e:
             logger.error("[大盘] %s action=get_market_stats status=failed error=%s", self._log_context(), e)
 
-        def _get_sector_rankings(self, overview: MarketOverview):
+    def _get_sector_rankings(self, overview: MarketOverview):
         """获取板块涨跌榜"""
         try:
             logger.info("[大盘] %s action=get_sector_rankings status=start", self._log_context())
@@ -562,7 +562,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
             overview.sector_rankings_quality = "missing"
             logger.error("[大盘] %s action=get_sector_rankings status=failed error=%s", self._log_context(), e)
 
-        def _get_concept_rankings(self, overview: MarketOverview):
+    def _get_concept_rankings(self, overview: MarketOverview):
         """获取概念/题材涨跌榜（fail-open）。"""
         try:
             logger.info("[大盘] %s action=get_concept_rankings status=start", self._log_context())
