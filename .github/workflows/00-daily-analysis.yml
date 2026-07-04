@@ -396,6 +396,14 @@ jobs:
           # 可选值: tencent, akshare_sina, efinance, akshare_em, tushare
           # 如果有 Tushare Pro 高积分账号，可将 tushare 放在首位
           REALTIME_SOURCE_PRIORITY: ${{ vars.REALTIME_SOURCE_PRIORITY || 'tencent,akshare_sina,akshare_em,efinance' }}
+
+          # ==========================================
+          # 数据质量护栏配置
+          # ==========================================
+          DATA_QUALITY_GUARDRAIL_ENABLED: ${{ vars.DATA_QUALITY_GUARDRAIL_ENABLED || 'true' }}
+          FALLBACK_ONLY_OBSERVE: ${{ vars.FALLBACK_ONLY_OBSERVE || 'true' }}
+          MARKET_REVIEW_REQUIRE_CONCEPT_DATA: ${{ vars.MARKET_REVIEW_REQUIRE_CONCEPT_DATA || 'false' }}
+          SHOW_DATA_SOURCE_DETAIL: ${{ vars.SHOW_DATA_SOURCE_DETAIL || 'true' }}
           
         run: |
           # 解析自选股配置：
