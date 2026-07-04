@@ -1467,8 +1467,12 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         bottom_sectors_text = self._format_ranking_summary(overview.bottom_sectors)
         top_concepts_text = self._format_ranking_summary(overview.top_concepts)
         bottom_concepts_text = self._format_ranking_summary(overview.bottom_concepts)
-
-         if review_language == "en":
+        sector_source = overview.sector_rankings_source or "获取失败"
+        sector_quality = overview.sector_rankings_quality or "missing"
+        concept_source = overview.concept_rankings_source or "获取失败"
+        concept_quality = overview.concept_rankings_quality or "missing"
+        
+        if review_language == "en":
             market_review_data_rules = """## Market Review Data Rules
             - Industry sectors and concept themes must be separated.
             - If concept/theme data is empty or unavailable, explicitly write: "Concept/theme ranking data is unavailable, so no concept-theme leadership is inferred."
@@ -1485,11 +1489,6 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
             5. 报告日期必须写“截至上一交易日收盘”或“基于上一交易日收盘数据”，非交易日 force_run 时不能写成当天实时行情。
             6. 所有指数、涨跌幅、成交额、上涨家数、涨停家数、板块涨跌幅必须来自输入数据，禁止自行补全。
             """
-        
-        sector_source = overview.sector_rankings_source or "获取失败"
-        sector_quality = overview.sector_rankings_quality or "missing"
-        concept_source = overview.concept_rankings_source or "获取失败"
-        concept_quality = overview.concept_rankings_quality or "missing"
 
         if review_language == "en":
             sector_quality_note = f"""## Sector Data Quality
