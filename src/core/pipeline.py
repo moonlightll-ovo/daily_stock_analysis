@@ -12,6 +12,7 @@ A股自选股智能分析系统 - 核心分析流水线
 """
 
 import logging
+import os
 import threading
 import time
 import uuid
@@ -96,6 +97,140 @@ logger = logging.getLogger(__name__)
 _SINGLE_STOCK_NOTIFY_LOCK_INIT_GUARD = threading.Lock()
 _DAILY_MARKET_CONTEXT_SERVICE_LOCK_INIT_GUARD = threading.Lock()
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _guardrail_text_blob(*items: Any) -> str:
+    parts = []
+    for item in items:
+        if item is None:
+            continue
+        try:
+            parts.append(str(item))
+        except Exception:
+            pass
+    return "\n".join(parts)
+
+
+def apply_data_quality_guardrail(
+    result: AnalysisResult,
+    *,
+    code: str,
+    realtime_quote: Any = None,
+    trend_result: Any = None,
+    enhanced_context: Optional[Dict[str, Any]] = None,
+    fundamental_context: Optional[Dict[str, Any]] = None,
+    news_context: Optional[str] = None,
+) -> List[str]:
+    """
+    数据质量护栏：
+    当行情/技术/基本面数据处于 fallback、partial、缺失状态时，
+    禁止输出买入、加仓、减仓、清仓、立即行动等强操作建议。
+    """
+
+    if result is None:
+        return []
+
+    if not _env_bool("DATA_QUALITY_GUARDRAIL_ENABLED", True):
+        return []
+
+    text_blob = _guardrail_text_blob(
+        code,
+        realtime_quote,
+        trend_result,
+        enhanced_context,
+        fundamental_context,
+        news_context,
+        getattr(result, "analysis", None),
+        getattr(result, "analysis_summary", None),
+        getattr(result, "guardrail_reason", None),
+        getattr(result, "dashboard", None),
+        getattr(result, "diagnostic_context_snapshot", None),
+    ).lower()
+
+    bad_markers = [
+        "降级兜底",
+        "fallback",
+        "quote: fallback",
+        "quote=fallback",
+        "technical: partial",
+        "technical=partial",
+        "partial",
+        "成交额：n/a",
+        "成交额=n/a",
+        "成交额：none",
+        "换手率：n/a",
+        "换手率=n/a",
+        "换手率 none",
+        "换手率：none",
+        "数据缺失",
+        "实时行情数据为fallback",
+        "行情数据为fallback",
+        "技术指标为partial",
+    ]
+
+    is_low_quality = any(marker in text_blob for marker in bad_markers)
+
+    if not is_low_quality:
+        return []
+
+    if not _env_bool("FALLBACK_ONLY_OBSERVE", True):
+        return ["low_quality_detected_but_fallback_only_observe_disabled"]
+
+    # 核心强制改写
+    result.operation_advice = localize_operation_advice(
+        "观望",
+        getattr(result, "report_language", None) or "zh",
+    )
+    result.decision_type = "hold"
+    result.action = "observe"
+    result.confidence_level = localize_confidence_level(
+        "low",
+        getattr(result, "report_language", None) or "zh",
+    )
+
+    # 分数拉回中性，避免“低质量数据 + 强卖出/强买入”
+    try:
+        score = int(getattr(result, "sentiment_score", 50) or 50)
+        if score < 45:
+            result.sentiment_score = 45
+        elif score > 60:
+            result.sentiment_score = 60
+    except Exception:
+        result.sentiment_score = 50
+
+    reason = (
+        "数据质量护栏触发：行情、技术指标或基本面数据存在 fallback / partial / 缺失，"
+        "当前数据不足以支持买入、加仓、减仓、清仓等强操作建议，因此强制降级为观望。"
+    )
+
+    result.guardrail_reason = reason
+
+    if getattr(result, "analysis_summary", None):
+        result.analysis_summary = f"{reason}\n\n{result.analysis_summary}"
+    else:
+        result.analysis_summary = reason
+
+    # 如果 dashboard 里也有 action / operation_advice，同步改掉
+    dashboard = getattr(result, "dashboard", None)
+    if isinstance(dashboard, dict):
+        dashboard["action"] = "observe"
+        dashboard["decision_type"] = "hold"
+        dashboard["operation_advice"] = "观望"
+        dashboard["guardrail_reason"] = reason
+
+        core = dashboard.get("core_conclusion")
+        if isinstance(core, dict):
+            core["action"] = "observe"
+            core["decision_type"] = "hold"
+            core["operation_advice"] = "观望"
+            core["guardrail_reason"] = reason
+
+    return ["data_quality_guardrail_observe_only"]
 
 def _symbol_scope_lookup_values(code: str, market: str) -> List[str]:
     """Return accepted persisted-intelligence symbol spellings for lookup."""
@@ -772,6 +907,23 @@ class StockAnalysisPipeline:
                     result.fundamental_context = fundamental_context
                 result.market_phase_summary = market_phase_summary
                 result.analysis_context_pack_overview = analysis_context_pack_overview
+
+                quality_adjustments = apply_data_quality_guardrail(
+                    result,
+                    code=code,
+                    realtime_quote=realtime_quote,
+                    trend_result=trend_result,
+                    enhanced_context=enhanced_context,
+                    fundamental_context=fundamental_context,
+                    news_context=news_context,
+                )
+                if quality_adjustments:
+                    logger.info(
+                        "[data_quality_guardrail] Applied adjustments for %s: %s",
+                        code,
+                        quality_adjustments,
+                    )
+
                 self._refresh_decision_action_for_final_result(
                     result,
                     report_type=report_type.value,
@@ -1409,6 +1561,25 @@ class StockAnalysisPipeline:
                     result.fundamental_context = fundamental_context
                 result.market_phase_summary = market_phase_summary
                 result.analysis_context_pack_overview = analysis_context_pack_overview
+
+                quality_adjustments = apply_data_quality_guardrail(
+                    result,
+                    code=code,
+                    realtime_quote=realtime_quote,
+                    trend_result=trend_result,
+                    enhanced_context=initial_context,
+                    fundamental_context=fundamental_context,
+                    news_context=initial_context.get("news_context")
+                    if isinstance(initial_context, dict)
+                    else None,
+                )
+                if quality_adjustments:
+                    logger.info(
+                        "[data_quality_guardrail] Applied agent adjustments for %s: %s",
+                        code,
+                        quality_adjustments,
+                    )
+
                 self._refresh_decision_action_for_final_result(
                     result,
                     report_type=report_type.value,
