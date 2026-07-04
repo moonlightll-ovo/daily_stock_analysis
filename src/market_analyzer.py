@@ -1153,7 +1153,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         ):
             return ""
         lines = []
-
+        language = self._get_review_language()
         if language == "en":
             lines.append(
                 f"**Sector data source**: {overview.sector_rankings_source or 'Unavailable'} "
@@ -1180,8 +1180,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
                 lines.append("**概念板块数据获取失败，暂不输出概念主线。**")
             if overview.sector_rankings_source == "AkShare 新浪接口":
                 lines.append("**行业板块来源：AkShare 新浪接口，口径仅供参考。**")
-        
-        language = self._get_review_language()
+                
 
         def append_ranking(title: str, name_label: str, rows: List[Dict]) -> None:
             if not rows:
